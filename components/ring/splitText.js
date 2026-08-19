@@ -97,9 +97,16 @@ export function createSplitText(group, params) {
     });
   };
 
+  const setOpacity = (value) => {
+    for (const uniform of fades) {
+      if (uniform) uniform.value = value;
+    }
+  };
+
   return {
     build,
     dispose,
+    setOpacity,
     get chars() {
       return chars;
     },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import gsap from "gsap";
 
@@ -13,7 +13,6 @@ import {
 import { buildAtlas } from "./ring/atlas";
 import { createMeta } from "./ring/meta";
 import { createSplitText } from "./ring/splitText";
-import { createTag, TAG_W, TAG_H } from "./ring/tag";
 import { defaultParams } from "./ring/params";
 import { IMAGE_FILES, PROJECTS } from "./ring/projects";
 import {
@@ -39,8 +38,7 @@ const blankTexture = () => {
 
 export default function Carousel() {
   const containerRef = useRef(null);
-  const listRef = useRef(null);
-  const itemsRef = useRef([]);
+
   const loaderRef = useRef(null);
   const liveRef = useRef(null);
   const cutRef = useRef(null);
@@ -51,10 +49,118 @@ export default function Carousel() {
     left: { box: null, goo: null, layers: [], plain: null },
     right: { box: null, goo: null, layers: [], plain: null },
   });
+  const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const [lightboxOrigin, setLightboxOrigin] = useState(null);
+  const flipImageRef = useRef(null);
+  const headingFadeRef = useRef({ target: 1, current: 1 });
+
+  const closeLightbox = () => {
+    if (isClosing || lightboxIndex === null) return;
+    setIsClosing(true);
+  };
+
+  useEffect(() => {
+    if (lightboxIndex === null || isClosing || !lightboxOrigin) return;
+    const image = flipImageRef.current;
+    const canvas = containerRef.current;
+    if (!image || !canvas) return;
+
+    gsap.killTweensOf([image, canvas]);
+    gsap.set(image, { opacity: 1 });
+    canvas.style.pointerEvents = "none";
+
+    const vw = canvas.clientWidth;
+    const vh = canvas.clientHeight;
+    const preload = new Image();
+    preload.onload = () => {
+      const scale = Math.min(
+        (vw * 0.92) / preload.width,
+        (vh * 0.92) / preload.height,
+      );
+      const finalW = preload.width * scale;
+      const finalH = preload.height * scale;
+      const finalX = (vw - finalW) / 2;
+      const finalY = (vh - finalH) / 2;
+
+      const tl = gsap.timeline();
+      tl.to(canvas, { opacity: 0, duration: 0.35, ease: "power2.out" }, 0);
+      tl.to(
+        image,
+        {
+          x: finalX - lightboxOrigin.x,
+          y: finalY - lightboxOrigin.y,
+          width: finalW,
+          height: finalH,
+          rotation: 0,
+          duration: 0.55,
+          ease: "elastic.out(1, 0.6)",
+        },
+        0,
+      );
+    };
+    preload.src = image.src;
+
+    return () => {
+      gsap.killTweensOf([image, canvas]);
+    };
+  }, [lightboxIndex, isClosing, lightboxOrigin]);
+
+  useEffect(() => {
+    if (!isClosing || !lightboxOrigin) return;
+    const image = flipImageRef.current;
+    const canvas = containerRef.current;
+    if (!image || !canvas) return;
+
+    gsap.killTweensOf([image, canvas]);
+
+    const tl = gsap.timeline({
+      onComplete: () => {
+        // Swap visuals atomically in one paint to avoid a blank or doubled frame.
+        gsap.set(image, { opacity: 0 });
+        gsap.set(canvas, { opacity: 1, pointerEvents: "" });
+        requestAnimationFrame(() => {
+          setLightboxIndex(null);
+          setIsClosing(false);
+          setLightboxOrigin(null);
+        });
+      },
+    });
+    tl.to(
+      image,
+      {
+        x: 0,
+        y: 0,
+        width: lightboxOrigin.width,
+        height: lightboxOrigin.height,
+        duration: 0.45,
+        ease: "power2.inOut",
+      },
+      0,
+    );
+    tl.to(image, { opacity: 0, duration: 0.05 }, ">-0.05");
+
+    return () => {
+      gsap.killTweensOf([image, canvas]);
+    };
+  }, [isClosing, lightboxOrigin]);
+
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const onKey = (e) => {
+      if (e.key === "Escape" && !isClosing) setIsClosing(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxIndex, isClosing]);
+
+  useEffect(() => {
+    headingFadeRef.current.target =
+      lightboxIndex !== null && !isClosing ? 0 : 1;
+  }, [lightboxIndex, isClosing]);
 
   useEffect(() => {
     const container = containerRef.current;
-    const listEl = listRef.current;
     const loaderEl = loaderRef.current;
     // Async work (atlas decode, the lil-gui import) can land after cleanup
     // under StrictMode's double mount. Everything deferred checks this.
@@ -159,11 +265,9 @@ export default function Carousel() {
     scene.add(textGroup);
 
     const splitText = createSplitText(textGroup, params);
-    const tag = createTag(params, uniforms);
     const meta = createMeta(
       {
         groups: metaRef.current,
-        list: listEl,
         loader: loaderEl,
         cut: cutRef.current,
         live: liveRef.current,
@@ -195,6 +299,13 @@ export default function Carousel() {
     // Up front, not on completion: the cell each plane wears is derived from
     // this and has to be right from the first frame, blank cells or not.
     const imageCount = atlas.count;
+
+    const cellOf = (slot) => {
+      const imgOff = Math.round(params.imageOffset);
+      return imageCount > 0
+        ? (((imgOff - slot) % imageCount) + imageCount) % imageCount
+        : 0;
+    };
 
     atlas.first.then(() => {
       if (!disposed) firstIn = true;
@@ -300,10 +411,6 @@ export default function Carousel() {
     let snapTo = 0;
     let snapCap = 0;
 
-    // A click is turning the ring to a card. While this is up the momentum
-    // above is suspended entirely, so the two cannot both drive spin.
-    let picking = false;
-
     let pointerTravel = 0; // tells a click from a drag
     let travelX = 0;
     let travelY = 0;
@@ -312,44 +419,6 @@ export default function Carousel() {
       const dx = e.clientX - bounds.left - ringCentre.x;
       const dy = e.clientY - bounds.top - ringCentre.y;
       return Math.atan2(-dy, dx);
-    };
-
-    const stopPick = () => {
-      if (!picking) return;
-      gsap.killTweensOf(state);
-      picking = false;
-    };
-
-    // Turn the ring until plane i faces front. A tween rather than a target
-    // handed to the snap: the snap is a run-in for a throw that is nearly
-    // spent and is shaped so it can only slow down, but a pick starts from a
-    // standstill and has to accelerate.
-    const pick = (i) => {
-      const slot = TAU / Math.round(params.count);
-      // Spread, plane i sits at seed + signedOffset(i) * slot + spin.
-      const base = frontAngle - params.seed * DEG - signedOffset(i) * slot;
-      // Nearest equivalent winding, so it takes the short way round rather
-      // than unwinding whole turns. Every card is within half a ring.
-      const target = base + Math.round((state.spin - base) / TAU) * TAU;
-
-      const slots = Math.abs(target - state.spin) / slot;
-      // Already there. Opening the project belongs here eventually.
-      if (slots < 0.01) return;
-
-      spinVel = 0;
-      settling = false;
-      picking = true;
-      gsap.killTweensOf(state);
-      gsap.to(state, {
-        spin: target,
-        // Root of the distance, not linear: a card eight slots round should
-        // take longer than its neighbour but not eight times longer.
-        duration: params.pickTime * Math.sqrt(Math.max(1, slots)),
-        ease: params.pickEase,
-        onComplete: () => {
-          picking = false;
-        },
-      });
     };
 
     /* ------------------------------------------------------------ pointer */
@@ -411,7 +480,6 @@ export default function Carousel() {
       // Trackpads send horizontal deltas too; take whichever dominates.
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       // Fresh input hands the ring back to its own momentum.
-      stopPick();
       settling = false;
       spinVel += d * params.scrollSpeed;
       spinVel = Math.max(-params.maxSpeed, Math.min(params.maxSpeed, spinVel));
@@ -423,7 +491,6 @@ export default function Carousel() {
       travelY = e.clientY;
       trackPointer(e);
       if (!interactive) return;
-      stopPick();
       if (coarse) beginHold();
       dragging = true;
       settling = false;
@@ -475,11 +542,52 @@ export default function Carousel() {
     };
 
     // A drag ends in a click too, so only a near-stationary press counts.
-    // `over` comes from the same hit test that decides the tag, so a click
-    // only ever lands on the card the tag was offering.
+    // Hit test against the live uniform state so a tap lands on the card
+    // under the pointer, not the smoothed cursor from the previous frame.
+    const hitAt = (x, y) => {
+      const count = Math.round(params.count);
+      const W = uniforms.uSize.value.x;
+      const H = uniforms.uSize.value.y;
+      for (let i = 0; i < count; i++) {
+        const sc = uniforms.uScale.value[i];
+        if (sc.x <= 0.0001 || sc.y <= 0.0001) continue;
+        const pos = uniforms.uPos.value[i];
+        const rot = uniforms.uRot.value[i];
+        const qx = x - pos.x;
+        const qy = y - pos.y;
+        const cr = Math.cos(rot);
+        const sr = Math.sin(rot);
+        if (
+          Math.abs(qx * cr + qy * sr) <= W * 0.5 * sc.x &&
+          Math.abs(-qx * sr + qy * cr) <= H * 0.5 * sc.y
+        ) {
+          return i;
+        }
+      }
+      return -1;
+    };
+
+    const openLightbox = (cell) => setLightboxIndex(cell);
+
     const onClick = () => {
-      if (!interactive || pointerTravel >= 5 || over < 0) return;
-      pick(over);
+      if (!interactive || pointerTravel >= 5) return;
+      const hit = hitAt(pointer.x, pointer.y);
+      if (hit < 0) return;
+
+      const sc = uniforms.uScale.value[hit];
+      const pos = uniforms.uPos.value[hit];
+      const rot = uniforms.uRot.value[hit];
+      const W = uniforms.uSize.value.x * sc.x;
+      const H = uniforms.uSize.value.y * sc.y;
+
+      setLightboxOrigin({
+        x: viewW * 0.5 + pos.x - W * 0.5,
+        y: viewH * 0.5 - pos.y - H * 0.5,
+        width: W,
+        height: H,
+        rotation: -rot * (180 / Math.PI),
+      });
+      openLightbox(cellOf(signedOffset(hit)));
     };
 
     container.addEventListener("wheel", onWheel, { passive: false });
@@ -580,19 +688,6 @@ export default function Carousel() {
     let shown = -1;
     let announced = -1;
     let over = -1;
-    let tagUp = false;
-
-    const paintList = () => {
-      const items = itemsRef.current;
-      for (let i = 0; i < items.length; i++) {
-        const el = items[i];
-        if (!el) continue;
-        const on = i === shown;
-        el.style.opacity = on ? "1" : "0.2";
-        if (on) el.setAttribute("aria-current", "true");
-        else el.removeAttribute("aria-current");
-      }
-    };
 
     const layout = (dt) => {
       const count = Math.round(params.count);
@@ -689,12 +784,6 @@ export default function Carousel() {
       // order, so dealing by index puts every other project side by side and
       // steps the column two names per slot. Negated because turning the ring
       // forward walks the front slot backwards.
-      const imgOff = Math.round(params.imageOffset);
-      const cellOf = (slot) =>
-        imageCount > 0
-          ? (((imgOff - slot) % imageCount) + imageCount) % imageCount
-          : 0;
-
       // Which card the cursor is on. Independent of the hover falloff above:
       // turning the goo off should not take the tag with it.
       const probe = pointer.inside && pointer.seeded && interactive;
@@ -831,40 +920,18 @@ export default function Carousel() {
       }
 
       over = overI;
-      // Both tests, not either: the width covers a small window on a mouse,
-      // `coarse` covers a large tablet. Re-tested every frame so a window
-      // dragged across the threshold resolves instead of stranding the tag.
-      const wantTag = over >= 0 && !coarse && viewW > params.tagFrom;
-      if (wantTag !== tagUp) {
-        tagUp = wantTag;
-        tag.show(wantTag);
-      }
       // Off the resting centre, so a card being pushed cannot chase its own
       // shadow next frame.
       if (over >= 0) focusPos.copy(rest[over]);
 
-      // Carried every frame whether present or not, so the tag is already in
-      // the right place the moment it is asked to appear.
-      uniforms.uTag.value.set(
-        cursor.x + params.tagX,
-        cursor.y + params.tagY,
-        tag.box.sx,
-        tag.box.sy,
-      );
-      uniforms.uTagP.value.set(
-        TAG_W * 0.5,
-        TAG_H * 0.5,
-        TAG_H * 0.5,
-        params.tagRefract,
-      );
-      uniforms.uTagQ.value.set(params.tagFrost, params.tagRim, 0, 0);
+      // Give the cursor an affordance now that the "View" tag is gone.
+      container.style.cursor = over >= 0 ? "pointer" : "default";
 
       // The column and the meta name whatever cell the front plane is wearing,
       // read off the same deal the shader was handed rather than recomputed —
       // so the highlight cannot disagree with the art.
       if (frontI >= 0 && imageCount > 0 && frontCell !== shown) {
         shown = frontCell;
-        paintList();
       }
 
       /* ---- honey ---- */
@@ -978,9 +1045,6 @@ export default function Carousel() {
       spinVel = 0;
       dragging = false;
       settling = false;
-      // The timeline tweens state.spin, so a pick in flight has to be off the
-      // same property before it starts.
-      stopPick();
 
       const gen = ++entryGen;
       // Only the first run has anything to wait for; a replay should not flash
@@ -1088,24 +1152,9 @@ export default function Carousel() {
         );
       }
 
-      // The column arrives with the heading, by which point there is a front
-      // for it to be reading.
-      if (listEl) {
-        tl.fromTo(
-          listEl,
-          { opacity: 0 },
-          { opacity: 1, duration: params.textTime, ease: params.textEase },
-          textStart,
-        );
-      }
-
       return tl;
     };
 
-    tag.build();
-    tag.load(() => {
-      if (!disposed) tag.build();
-    });
     styleMeta();
 
     let tl = null;
@@ -1124,7 +1173,6 @@ export default function Carousel() {
     const startEntry = () => {
       if (disposed || tl) return;
       splitText.build();
-      tag.build();
       styleMeta();
       replay();
     };
@@ -1156,7 +1204,6 @@ export default function Carousel() {
                 splitText.build();
                 replay();
               },
-              rebuildTag: () => tag.build(),
               replayMeta: () => {
                 announced = -1;
               },
@@ -1185,7 +1232,7 @@ export default function Carousel() {
       prevT = now;
       uniforms.uTime.value = (now - start) * 0.001;
 
-      if (interactive && !dragging && !picking) {
+      if (interactive && !dragging) {
         state.spin += spinVel * dt;
         spinVel *= Math.pow(params.damping, dt * 60);
 
@@ -1257,13 +1304,23 @@ export default function Carousel() {
       if (
         interactive &&
         !dragging &&
-        !picking &&
         spinVel === 0 &&
         shown >= 0 &&
         shown !== announced
       ) {
         announced = shown;
         meta.show(shown);
+      }
+
+      // Fade the heading out while the lightbox is open, back in when closed.
+      if (splitText.fades.length) {
+        const target = headingFadeRef.current.target;
+        const diff = target - headingFadeRef.current.current;
+        if (Math.abs(diff) > 0.001) {
+          const next = headingFadeRef.current.current + diff * chase(dt, 0.15);
+          headingFadeRef.current.current = next;
+          splitText.setOpacity(next);
+        }
       }
 
       renderer.render(scene, camera);
@@ -1287,9 +1344,7 @@ export default function Carousel() {
       tl?.kill();
       gsap.killTweensOf(splitText.chars);
       gsap.killTweensOf(splitText.fades);
-      gsap.killTweensOf(listEl);
       meta.dispose();
-      tag.dispose();
       splitText.dispose();
       gui?.destroy();
 
@@ -1315,33 +1370,6 @@ export default function Carousel() {
           pointermove stream dies mid-drag. Nothing here scrolls — the swipe
           is the carousel. */}
       <div ref={containerRef} className="fixed inset-0 touch-none" />
-
-      {/* Never takes the pointer: the canvas underneath handles the wheel and
-          the drag, and the column has no business interrupting a throw that
-          happens to pass under it. Sized from styleMeta, not a class, so it
-          takes the narrow bump with every other label. */}
-      <ul
-        ref={listRef}
-        aria-label="Projects"
-        style={{
-          fontFamily: '"Satoshi", ui-sans-serif, system-ui, sans-serif',
-        }}
-        className="pointer-events-none fixed right-[12vw] top-[2.4vh] z-10 flex flex-col items-start text-right leading-[1.4] tracking-[0.01em] text-[#0a0a0a] opacity-0 max-sm:hidden"
-      >
-        {PROJECTS.map((p, i) => (
-          <li
-            key={p.file}
-            ref={(el) => {
-              itemsRef.current[i] = el;
-            }}
-            // No transition, deliberately: the colour turns over the moment
-            // the ring passes the halfway point between two slots.
-            style={{ opacity: 0.2 }}
-          >
-            {p.name}
-          </li>
-        ))}
-      </ul>
 
       {/* Three rows per side, identical in structure and all carrying both
           words: two inside the filtered wrapper that melt into each other, and
@@ -1445,6 +1473,29 @@ export default function Carousel() {
           </filter>
         </defs>
       </svg>
+
+      {/* eslint-disable @next/next/no-img-element */}
+      {(lightboxIndex !== null || isClosing) && lightboxOrigin && (
+        <img
+          ref={flipImageRef}
+          src={lightboxIndex !== null ? `/${PROJECTS[lightboxIndex].file}` : ""}
+          alt={lightboxIndex !== null ? PROJECTS[lightboxIndex].name : ""}
+          className="fixed z-50 cursor-zoom-out object-contain"
+          style={{
+            left: lightboxOrigin.x,
+            top: lightboxOrigin.y,
+            width: lightboxOrigin.width,
+            height: lightboxOrigin.height,
+            transform: `rotate(${lightboxOrigin.rotation}deg)`,
+            opacity: 0,
+          }}
+          onClick={(e) => {
+            e.stopPropagation();
+            closeLightbox();
+          }}
+        />
+      )}
+      {/* eslint-enable @next/next/no-img-element */}
     </>
   );
 }

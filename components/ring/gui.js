@@ -12,8 +12,7 @@ import { TAU } from "./utils";
  * `replay` for anything baked into the entry timeline when it is built.
  */
 export function mountGui(GUI, { params, state, info, actions }) {
-  const { replay, refit, styleMeta, setThreshold, rebuildText, rebuildTag } =
-    actions;
+  const { replay, refit, styleMeta, setThreshold, rebuildText } = actions;
 
   const gui = new GUI({ title: "ring" });
 
@@ -220,18 +219,6 @@ export function mountGui(GUI, { params, state, info, actions }) {
   sides.add(params, "sidePush", 0, 240, 1).name("push away");
   sides.add(params, "sideDim", 0, 1, 0.01).name("dim");
   sides.add(params, "sideReach", 0.2, 12, 0.05).name("reach (how many)");
-
-  const tag = gui.addFolder("tag");
-  tag.add(params, "tagFrom", 0, 2000, 10).name("hide at or below (px)");
-  tag.add(params, "tagText").name("label").onFinishChange(rebuildTag);
-  tag.add(params, "tagSize", 6, 40, 1).name("size").onChange(rebuildTag);
-  tag.add(params, "tagArrow", 0, 40, 1).name("arrow").onChange(rebuildTag);
-  tag.add(params, "tagGap", 0, 30, 1).name("gap").onChange(rebuildTag);
-  tag.add(params, "tagX", -400, 400, 1).name("offset x");
-  tag.add(params, "tagY", -400, 400, 1).name("offset y (+up)");
-  tag.add(params, "tagFrost", 0, 1, 0.01).name("frost");
-  tag.add(params, "tagRim", 0, 1, 0.01).name("rim");
-  tag.add(params, "tagRefract", 0, 60, 0.5).name("refract");
 
   // -- material ------------------------------------------------------------
   const honey = gui.addFolder("honey");
