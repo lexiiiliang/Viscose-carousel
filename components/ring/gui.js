@@ -119,6 +119,18 @@ export function mountGui(GUI, { params, state, info, actions }) {
   onStage("moveDelay", 0, 15, 0.05, "moveDelay");
   stage.add(params, "moveEase", EASES).onChange(replay);
 
+  // -- lightbox ------------------------------------------------------------
+  const lightbox = gui.addFolder("lightbox");
+  lightbox.add(params, "lightboxTime", 0.05, 3, 0.05).name("time (s)");
+  lightbox.add(params, "lightboxFill", 0.5, 1, 0.01).name("viewport fill");
+  lightbox
+    .add(params, "lightboxEase", [
+      "elastic.out(1, 0.6)",
+      "power2.inOut",
+      "power3.inOut",
+    ])
+    .name("ease");
+
   // -- the intro heading ----------------------------------------------------
   const text = gui.addFolder("text");
   text.add(params, "text").onFinishChange(rebuildText);

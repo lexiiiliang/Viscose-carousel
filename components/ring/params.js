@@ -103,6 +103,9 @@ export function defaultParams() {
     snapFrom: 1, // rad/s under which the ring commits to a slot
     pickTime: 0.55, // click-to-centre: seconds for one slot, root-scaled
     pickEase: "power3.inOut",
+    lightboxTime: 0.55,
+    lightboxFill: 0.92, // fraction of the viewport available to the large card
+    lightboxEase: "elastic.out(1, 0.6)",
 
     // -- the intro heading, in the scene ---------------------------------
     text: "Works '26",

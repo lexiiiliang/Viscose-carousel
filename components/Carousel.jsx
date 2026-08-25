@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import gsap from "gsap";
 
@@ -14,7 +14,7 @@ import { buildAtlas } from "./ring/atlas";
 import { createMeta } from "./ring/meta";
 import { createSplitText } from "./ring/splitText";
 import { defaultParams } from "./ring/params";
-import { IMAGE_FILES, PROJECTS } from "./ring/projects";
+import { IMAGE_FILES } from "./ring/projects";
 import {
   TAU,
   HALF_PI,
@@ -49,116 +49,6 @@ export default function Carousel() {
     left: { box: null, goo: null, layers: [], plain: null },
     right: { box: null, goo: null, layers: [], plain: null },
   });
-  const [lightboxIndex, setLightboxIndex] = useState(null);
-  const [isClosing, setIsClosing] = useState(false);
-  const [lightboxOrigin, setLightboxOrigin] = useState(null);
-  const flipImageRef = useRef(null);
-  const headingFadeRef = useRef({ target: 1, current: 1 });
-
-  const closeLightbox = () => {
-    if (isClosing || lightboxIndex === null) return;
-    setIsClosing(true);
-  };
-
-  useEffect(() => {
-    if (lightboxIndex === null || isClosing || !lightboxOrigin) return;
-    const image = flipImageRef.current;
-    const canvas = containerRef.current;
-    if (!image || !canvas) return;
-
-    gsap.killTweensOf([image, canvas]);
-    gsap.set(image, { opacity: 1 });
-    canvas.style.pointerEvents = "none";
-
-    const vw = canvas.clientWidth;
-    const vh = canvas.clientHeight;
-    const preload = new Image();
-    preload.onload = () => {
-      const scale = Math.min(
-        (vw * 0.92) / preload.width,
-        (vh * 0.92) / preload.height,
-      );
-      const finalW = preload.width * scale;
-      const finalH = preload.height * scale;
-      const finalX = (vw - finalW) / 2;
-      const finalY = (vh - finalH) / 2;
-
-      const tl = gsap.timeline();
-      tl.to(canvas, { opacity: 0, duration: 0.35, ease: "power2.out" }, 0);
-      tl.to(
-        image,
-        {
-          x: finalX - lightboxOrigin.x,
-          y: finalY - lightboxOrigin.y,
-          width: finalW,
-          height: finalH,
-          rotation: 0,
-          duration: 0.55,
-          ease: "elastic.out(1, 0.6)",
-        },
-        0,
-      );
-    };
-    preload.src = image.src;
-
-    return () => {
-      gsap.killTweensOf([image, canvas]);
-    };
-  }, [lightboxIndex, isClosing, lightboxOrigin]);
-
-  useEffect(() => {
-    if (!isClosing || !lightboxOrigin) return;
-    const image = flipImageRef.current;
-    const canvas = containerRef.current;
-    if (!image || !canvas) return;
-
-    gsap.killTweensOf([image, canvas]);
-
-    const tl = gsap.timeline({
-      onComplete: () => {
-        // Swap visuals atomically in one paint to avoid a blank or doubled frame.
-        gsap.set(image, { opacity: 0 });
-        gsap.set(canvas, { opacity: 1, pointerEvents: "" });
-        requestAnimationFrame(() => {
-          setLightboxIndex(null);
-          setIsClosing(false);
-          setLightboxOrigin(null);
-        });
-      },
-    });
-    tl.to(
-      image,
-      {
-        x: 0,
-        y: 0,
-        width: lightboxOrigin.width,
-        height: lightboxOrigin.height,
-        duration: 0.45,
-        ease: "power2.inOut",
-      },
-      0,
-    );
-    tl.to(image, { opacity: 0, duration: 0.05 }, ">-0.05");
-
-    return () => {
-      gsap.killTweensOf([image, canvas]);
-    };
-  }, [isClosing, lightboxOrigin]);
-
-  useEffect(() => {
-    if (lightboxIndex === null) return;
-    const onKey = (e) => {
-      if (e.key === "Escape" && !isClosing) setIsClosing(true);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [lightboxIndex, isClosing]);
-
-  useEffect(() => {
-    headingFadeRef.current.target =
-      lightboxIndex !== null && !isClosing ? 0 : 1;
-  }, [lightboxIndex, isClosing]);
-
   useEffect(() => {
     const container = containerRef.current;
     const loaderEl = loaderRef.current;
@@ -176,6 +66,20 @@ export default function Carousel() {
     // Read-only panel readouts, so an invalid ring is visible rather than
     // silent and the reference window can be matched to the live one.
     const info = { restingGap: 0, window: "", scale: 1, band: "wide" };
+    // The lightbox is not a second element. It is the selected shader plane
+    // borrowing a different position and scale, then reversing that same
+    // tween to return. Rotation is intentionally absent from the transition.
+    const lightbox = {
+      active: false,
+      closing: false,
+      plane: -1,
+      progress: 0,
+      originPos: new THREE.Vector2(),
+      originScale: new THREE.Vector2(1, 1),
+      originRot: 0,
+      targetScale: 1,
+      tween: null,
+    };
 
     // Browsers cap the number of live WebGL contexts (~16 in Chrome). If that
     // is hit, this throws and the rest of the effect never runs — no canvas is
@@ -403,6 +307,10 @@ export default function Carousel() {
     let dragging = false;
     let dragPrevAngle = 0;
     let dragPrevTime = 0;
+    let picking = false;
+    let pickTween = null;
+    let pendingLightbox = -1;
+    const planeAngles = new Float32Array(MAX_PLANES);
 
     // The snap is a phase, not a force that is always on: a flick coasts
     // untouched, and once it is nearly spent the ring commits to a slot and
@@ -475,7 +383,7 @@ export default function Carousel() {
     };
 
     const onWheel = (e) => {
-      if (!interactive) return;
+      if (!interactive || lightbox.active || picking) return;
       e.preventDefault();
       // Trackpads send horizontal deltas too; take whichever dominates.
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
@@ -490,7 +398,7 @@ export default function Carousel() {
       travelX = e.clientX;
       travelY = e.clientY;
       trackPointer(e);
-      if (!interactive) return;
+      if (!interactive || lightbox.active || picking) return;
       if (coarse) beginHold();
       dragging = true;
       settling = false;
@@ -567,27 +475,127 @@ export default function Carousel() {
       return -1;
     };
 
-    const openLightbox = (cell) => setLightboxIndex(cell);
+    const finishLightboxClose = () => {
+      lightbox.active = false;
+      lightbox.closing = false;
+      lightbox.plane = -1;
+      lightbox.progress = 0;
+      lightbox.tween?.kill();
+      lightbox.tween = null;
+      container.style.cursor = "default";
+      splitText.setOpacity(1);
+      for (const side of ["left", "right"]) {
+        const box = metaRef.current[side].box;
+        if (box) box.style.opacity = "1";
+      }
+    };
 
-    const onClick = () => {
-      if (!interactive || pointerTravel >= 5) return;
-      const hit = hitAt(pointer.x, pointer.y);
-      if (hit < 0) return;
+    const closeLightbox = () => {
+      if (!lightbox.active || lightbox.closing) return;
+      lightbox.closing = true;
 
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        finishLightboxClose();
+        return;
+      }
+
+      // Reversing the original tween preserves its exact path and timing.
+      // No second exit tween means no divergent curve and no handoff frame.
+      lightbox.tween?.reverse();
+    };
+
+    const openLightbox = (hit) => {
       const sc = uniforms.uScale.value[hit];
       const pos = uniforms.uPos.value[hit];
-      const rot = uniforms.uRot.value[hit];
-      const W = uniforms.uSize.value.x * sc.x;
-      const H = uniforms.uSize.value.y * sc.y;
+      const W = uniforms.uSize.value.x;
+      const H = uniforms.uSize.value.y;
 
-      setLightboxOrigin({
-        x: viewW * 0.5 + pos.x - W * 0.5,
-        y: viewH * 0.5 - pos.y - H * 0.5,
-        width: W,
-        height: H,
-        rotation: -rot * (180 / Math.PI),
+      lightbox.active = true;
+      lightbox.closing = false;
+      lightbox.plane = hit;
+      lightbox.progress = 0;
+      lightbox.originPos.copy(pos);
+      lightbox.originScale.set(sc.x, sc.y);
+      lightbox.originRot = uniforms.uRot.value[hit];
+      lightbox.targetScale = Math.min(
+        (viewW * params.lightboxFill) / W,
+        (viewH * params.lightboxFill) / H,
+      );
+      spinVel = 0;
+      settling = false;
+      dragging = false;
+      pointer.inside = false;
+      container.style.cursor = "zoom-out";
+
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        lightbox.progress = 1;
+        return;
+      }
+
+      lightbox.tween = gsap.to(lightbox, {
+        progress: 1,
+        duration: params.lightboxTime,
+        ease: params.lightboxEase,
+        paused: true,
       });
-      openLightbox(cellOf(signedOffset(hit)));
+      lightbox.tween.eventCallback("onReverseComplete", finishLightboxClose);
+      lightbox.tween.play();
+    };
+
+    const pickThenOpen = (hit) => {
+      const count = Math.round(params.count);
+      const slot = TAU / count;
+      const delta = Math.atan2(
+        Math.sin(frontAngle - planeAngles[hit]),
+        Math.cos(frontAngle - planeAngles[hit]),
+      );
+
+      if (Math.abs(delta) < 0.001) {
+        openLightbox(hit);
+        return;
+      }
+
+      picking = true;
+      pendingLightbox = -1;
+      spinVel = 0;
+      settling = false;
+      dragging = false;
+      pointer.inside = false;
+      cursor.amt = 0;
+      pickTween?.kill();
+
+      const targetSpin = state.spin + delta;
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        state.spin = targetSpin;
+        pendingLightbox = hit;
+        return;
+      }
+
+      pickTween = gsap.to(state, {
+        spin: targetSpin,
+        duration:
+          params.pickTime * Math.sqrt(Math.max(1, Math.abs(delta) / slot)),
+        ease: params.pickEase,
+        onComplete: () => {
+          pickTween = null;
+          pendingLightbox = hit;
+        },
+      });
+    };
+
+    const onClick = () => {
+      if (!interactive || pointerTravel >= 5 || picking) return;
+      if (lightbox.active) {
+        closeLightbox();
+        return;
+      }
+
+      const hit = hitAt(pointer.x, pointer.y);
+      if (hit >= 0) pickThenOpen(hit);
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeLightbox();
     };
 
     container.addEventListener("wheel", onWheel, { passive: false });
@@ -597,6 +605,7 @@ export default function Carousel() {
     container.addEventListener("pointercancel", onPointerUp);
     container.addEventListener("pointerleave", onPointerLeave);
     container.addEventListener("click", onClick);
+    window.addEventListener("keydown", onKeyDown);
 
     const updatePointer = (dt) => {
       // Held off until the entry finishes, so the cursor cannot soften the
@@ -695,6 +704,10 @@ export default function Carousel() {
 
       const step = TAU / count;
       const spread = clamp01(state.spread);
+      const lightboxT = clamp01(lightbox.progress);
+      const backgroundVisibility = lightbox.active
+        ? 1 - smoothstep(0, 0.65, lightboxT)
+        : 1;
 
       // Band values are picked per frame rather than latched on resize, so
       // dragging any of these sliders shows up straight away.
@@ -786,7 +799,8 @@ export default function Carousel() {
       // forward walks the front slot backwards.
       // Which card the cursor is on. Independent of the hover falloff above:
       // turning the goo off should not take the tag with it.
-      const probe = pointer.inside && pointer.seeded && interactive;
+      const probe =
+        pointer.inside && pointer.seeded && interactive && !lightbox.active;
       let overI = -1;
       // Which card the rest are standing aside for, from last frame.
       const focusI = track ? over : -1;
@@ -798,6 +812,7 @@ export default function Carousel() {
         const cell = cellOf(sIdx);
 
         const angle = seedAngle + Math.sign(sIdx) * step * cum[n] + state.spin;
+        planeAngles[i] = angle;
         const px = Math.cos(angle) * Rnow + cx;
         const py = Math.sin(angle) * Rnow + cy;
         rest[i].set(px, py);
@@ -891,6 +906,30 @@ export default function Carousel() {
           cell,
         );
 
+        if (lightbox.active) {
+          if (i === lightbox.plane) {
+            // One shader plane owns the whole journey. Its rotation is held
+            // fixed, so reversing the tween only retraces position and scale.
+            const t = lightbox.progress;
+            uniforms.uPos.value[i].set(
+              lightbox.originPos.x * (1 - t),
+              lightbox.originPos.y * (1 - t),
+            );
+            uniforms.uRot.value[i] = lightbox.originRot;
+            uniforms.uScale.value[i].set(
+              lightbox.originScale.x +
+                (lightbox.targetScale - lightbox.originScale.x) * t,
+              lightbox.originScale.y +
+                (lightbox.targetScale - lightbox.originScale.y) * t,
+              1,
+              cell,
+            );
+          } else {
+            uniforms.uScale.value[i].x *= backgroundVisibility;
+            uniforms.uScale.value[i].y *= backgroundVisibility;
+          }
+        }
+
         // Same box the shader draws, tested in the plane's own frame, so it
         // answers for the card as it actually is: turned, leaned and swollen.
         // Cards never overlap once formed, so the first hit is the only hit.
@@ -925,7 +964,11 @@ export default function Carousel() {
       if (over >= 0) focusPos.copy(rest[over]);
 
       // Give the cursor an affordance now that the "View" tag is gone.
-      container.style.cursor = over >= 0 ? "pointer" : "default";
+      container.style.cursor = lightbox.active
+        ? "zoom-out"
+        : over >= 0
+          ? "pointer"
+          : "default";
 
       // The column and the meta name whatever cell the front plane is wearing,
       // read off the same deal the shader was handed rather than recomputed —
@@ -983,7 +1026,9 @@ export default function Carousel() {
         // thread would be there before the pull was.
         webF[l] += (fl - webF[l]) * (fl > webF[l] ? kRise : kFall);
 
-        const w = Math.max(Math.pow(1 - v, params.thin), params.web * webF[l]);
+        const w =
+          Math.max(Math.pow(1 - v, params.thin), params.web * webF[l]) *
+          backgroundVisibility;
         // dissolve carries the radius past zero and out of antialiasing range
         // so the thread fades instead of bottoming out as a half-covered
         // hairline. In screen px, so unlike edgeHalf it does not carry g.
@@ -1011,9 +1056,12 @@ export default function Carousel() {
 
       // Both are px into the distance field, so they scale with the ring or
       // the merge reads as a different material at a different window size.
-      uniforms.uK.value = params.goo * planeK * fit;
+      uniforms.uK.value = params.goo * planeK * fit * backgroundVisibility;
       uniforms.uWobble.value =
-        params.wobble * fit * (1 - smoothstep(0.2, 0.95, state.progress));
+        params.wobble *
+        fit *
+        (1 - smoothstep(0.2, 0.95, state.progress)) *
+        backgroundVisibility;
 
       // Gated on the seed's own cell, not on the atlas existing: the texture
       // is bound from frame one but blank, and texturing before anything is
@@ -1022,8 +1070,12 @@ export default function Carousel() {
       uniforms.uBlend.value = Math.max(0.5, params.blend * planeK * g);
 
       const on = params.glass;
-      uniforms.uBandTop.value = on ? params.bandTop * viewH : 0;
-      uniforms.uBandBottom.value = on ? params.bandBottom * viewH : 0;
+      uniforms.uBandTop.value = on
+        ? params.bandTop * viewH * backgroundVisibility
+        : 0;
+      uniforms.uBandBottom.value = on
+        ? params.bandBottom * viewH * backgroundVisibility
+        : 0;
       uniforms.uGlass.value.set(
         params.refract,
         params.squeeze,
@@ -1232,7 +1284,7 @@ export default function Carousel() {
       prevT = now;
       uniforms.uTime.value = (now - start) * 0.001;
 
-      if (interactive && !dragging) {
+      if (!lightbox.active && !picking && interactive && !dragging) {
         state.spin += spinVel * dt;
         spinVel *= Math.pow(params.damping, dt * 60);
 
@@ -1295,14 +1347,23 @@ export default function Carousel() {
       }
 
       tickLoader(dt);
-      updatePointer(dt);
+      if (!lightbox.active && !picking) updatePointer(dt);
       layout(dt);
+
+      if (pendingLightbox >= 0) {
+        const hit = pendingLightbox;
+        pendingLightbox = -1;
+        picking = false;
+        openLightbox(hit);
+      }
 
       // The name arrives with the card, not while one flicks past. A pick
       // drives spin by tween, so spinVel is zero throughout — without that
       // test the meta would morph as the ring passed the halfway mark.
       if (
         interactive &&
+        !picking &&
+        !lightbox.active &&
         !dragging &&
         spinVel === 0 &&
         shown >= 0 &&
@@ -1312,14 +1373,12 @@ export default function Carousel() {
         meta.show(shown);
       }
 
-      // Fade the heading out while the lightbox is open, back in when closed.
-      if (splitText.fades.length) {
-        const target = headingFadeRef.current.target;
-        const diff = target - headingFadeRef.current.current;
-        if (Math.abs(diff) > 0.001) {
-          const next = headingFadeRef.current.current + diff * chase(dt, 0.15);
-          headingFadeRef.current.current = next;
-          splitText.setOpacity(next);
+      if (lightbox.active) {
+        const chromeOpacity = 1 - smoothstep(0, 0.65, lightbox.progress);
+        splitText.setOpacity(chromeOpacity);
+        for (const side of ["left", "right"]) {
+          const box = metaRef.current[side].box;
+          if (box) box.style.opacity = String(chromeOpacity);
         }
       }
 
@@ -1331,6 +1390,8 @@ export default function Carousel() {
       clearTimeout(holdTimer);
       clearTimeout(fontFallback);
       renderer.setAnimationLoop(null);
+      lightbox.tween?.kill();
+      pickTween?.kill();
 
       window.removeEventListener("resize", onResize);
       container.removeEventListener("wheel", onWheel);
@@ -1340,6 +1401,7 @@ export default function Carousel() {
       container.removeEventListener("pointercancel", onPointerUp);
       container.removeEventListener("pointerleave", onPointerLeave);
       container.removeEventListener("click", onClick);
+      window.removeEventListener("keydown", onKeyDown);
 
       tl?.kill();
       gsap.killTweensOf(splitText.chars);
@@ -1473,29 +1535,6 @@ export default function Carousel() {
           </filter>
         </defs>
       </svg>
-
-      {/* eslint-disable @next/next/no-img-element */}
-      {(lightboxIndex !== null || isClosing) && lightboxOrigin && (
-        <img
-          ref={flipImageRef}
-          src={lightboxIndex !== null ? `/${PROJECTS[lightboxIndex].file}` : ""}
-          alt={lightboxIndex !== null ? PROJECTS[lightboxIndex].name : ""}
-          className="fixed z-50 cursor-zoom-out object-contain"
-          style={{
-            left: lightboxOrigin.x,
-            top: lightboxOrigin.y,
-            width: lightboxOrigin.width,
-            height: lightboxOrigin.height,
-            transform: `rotate(${lightboxOrigin.rotation}deg)`,
-            opacity: 0,
-          }}
-          onClick={(e) => {
-            e.stopPropagation();
-            closeLightbox();
-          }}
-        />
-      )}
-      {/* eslint-enable @next/next/no-img-element */}
     </>
   );
 }

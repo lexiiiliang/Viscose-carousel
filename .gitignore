@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# Local high-resolution photo sources. The optimized public copies are tracked.
+/gallery-source/
+
 # Fonts are committed. See the licence notice in README.md — PP Neue Montreal
 # is included for local development only and is not licensed by this project.
 
