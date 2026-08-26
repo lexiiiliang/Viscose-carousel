@@ -142,13 +142,6 @@ export default function Carousel() {
       uSheen: { value: 0 },
       uMouse: { value: new THREE.Vector4() },
       uMelt: { value: new THREE.Vector4() },
-      uTagTex: {
-        value: new THREE.DataTexture(new Uint8Array([0, 0, 0, 0]), 1, 1),
-      },
-      uTag: { value: new THREE.Vector4() },
-      uTagP: { value: new THREE.Vector4() },
-      uTagQ: { value: new THREE.Vector4() },
-      uPage: { value: new THREE.Color("#fafafa") },
     };
 
     const mesh = new THREE.Mesh(
@@ -963,7 +956,8 @@ export default function Carousel() {
       // shadow next frame.
       if (over >= 0) focusPos.copy(rest[over]);
 
-      // Give the cursor an affordance now that the "View" tag is gone.
+      // The cursor is the only affordance for a card: pointer over one,
+      // zoom-out in the lightbox.
       container.style.cursor = lightbox.active
         ? "zoom-out"
         : over >= 0
@@ -1413,7 +1407,6 @@ export default function Carousel() {
       mesh.geometry.dispose();
       mesh.material.dispose();
       uniforms.uAtlas.value?.dispose();
-      uniforms.uTagTex.value?.dispose();
 
       // dispose() frees GL resources but leaves the context itself alive until
       // the canvas is collected, which is not deterministic. This effect

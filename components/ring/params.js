@@ -185,21 +185,6 @@ export function defaultParams() {
     sideDim: 0.15,
     sideReach: 2.4, // in plane long edges, measured from the hovered card
 
-    // -- the cursor tag, drawn in the same shader pass --------------------
-    tagFrom: 1024, // viewport width it needs; below that there is no cursor
-    tagText: "View",
-    tagSize: 14,
-    tagWeight: 500,
-    tagArrow: 14, // px, the svg in /public
-    tagGap: 6,
-    // Offset off the cursor deliberately: sitting under it, the tag covers
-    // the thing being pointed at. World px, so +y is up like posY.
-    tagX: 64,
-    tagY: -38,
-    tagFrost: 0.16,
-    tagRim: 0.02,
-    tagRefract: 39.5,
-
     // -- honey between neighbouring planes --------------------------------
     thread: 1.0,
     thin: 0.4,

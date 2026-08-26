@@ -50,7 +50,6 @@ export const fragmentShader = /* glsl */ `
   uniform float uWobble;       // surface tension noise amount, px
   uniform float uTime;
   uniform vec3  uColor;
-  uniform vec3  uPage;         // what is behind the ring, for the tag to read
 
   // All the artwork lives in one atlas: ESSL 1.00 cannot index an array of
   // samplers with a varying index, so a per-plane texture is not an option.
@@ -65,16 +64,6 @@ export const fragmentShader = /* glsl */ `
   // Packed into vec4s for the same reason the link parameters are.
   uniform vec4 uMouse;  // cursor.xy px, presence 0..1, blend px added at it
   uniform vec4 uMelt;   // reach px, wake px, wake frequency, wake speed
-
-  // --- the cursor tag ------------------------------------------------------
-  // Drawn in this pass with everything else rather than as an element over the
-  // canvas. That is what lets its label inspect the pixels it is sitting on and
-  // invert against them, and it means the glass refracts the ring the same way
-  // the lip does instead of having to sample it back out of a backdrop.
-  uniform sampler2D uTagTex;  // the label; only its alpha is used, as a mask
-  uniform vec4 uTag;   // centre.xy px, scale.xy — scale 0 is simply absent
-  uniform vec4 uTagP;  // half width, half height, corner radius, refract px
-  uniform vec4 uTagQ;  // frost, rim gain, unused, unused
 
   vec2 atlasUV(vec2 uv, float idx) {
     float col = mod(idx, uGrid.x);
@@ -189,25 +178,6 @@ export const fragmentShader = /* glsl */ `
     return max(abs(along) - len * 0.5, abs(across) - r);
   }
 
-  // The tag's own outline, scaled by whatever the pop animation is doing.
-  float sdTag(vec2 p) {
-    vec2 hs = uTagP.xy * abs(uTag.zw);
-    return sdRoundBox(p - uTag.xy, hs, min(uTagP.z, min(hs.x, hs.y)));
-  }
-
-  // Its surface normal, by difference. A pill's normal is vertical along the
-  // flat edges and radial round the ends, so nothing simpler than this gets the
-  // refraction pointing the right way the whole way round.
-  vec2 tagNormal(vec2 p) {
-    vec2 e = vec2(1.0, 0.0);
-    vec2 g = vec2(
-      sdTag(p + e.xy) - sdTag(p - e.xy),
-      sdTag(p + e.yx) - sdTag(p - e.yx)
-    );
-    float l = length(g);
-    return l > 0.0001 ? g / l : vec2(0.0);
-  }
-
   // smooth minimum — this is what makes the shapes read as liquid.
   // Note it also behaves as a plain min() when a is the 1e6 sentinel.
   float smin(float a, float b, float k) {
@@ -217,24 +187,8 @@ export const fragmentShader = /* glsl */ `
   }
 
   void main() {
-    // Screen position, kept unbent: the tag is pinned to the cursor, so it is
-    // placed and drawn here rather than in the lip's warped space.
-    vec2 ps = (vUv - 0.5) * uResolution;
-
-    vec2 p = ps;
+    vec2 p = (vUv - 0.5) * uResolution;
     float bend = glassBend(p);
-
-    // The tag refracts whatever is under it, so its warp has to be applied to
-    // the sampling position before the field is read — the same order the lip
-    // works in. Flat through the middle, bending hard at the rim, which is what
-    // reads as a thickness of glass rather than a smear.
-    float dTag = sdTag(ps);
-    float tagOn = min(abs(uTag.z), abs(uTag.w));
-    if (tagOn > 0.001 && dTag < 0.0 && uTagP.w > 0.0) {
-      float depth = clamp(-dTag / max(uTagP.y * abs(uTag.w), 1.0), 0.0, 1.0);
-      float t = 1.0 - depth;
-      p += tagNormal(ps) * (1.0 - sqrt(max(0.0, 1.0 - t * t))) * uTagP.w;
-    }
 
     // Read after the bend, so the cursor acts in the same warped space as the
     // ring: dragged into the lip, its influence is refracted with everything
@@ -347,12 +301,7 @@ export const fragmentShader = /* glsl */ `
     float aa = clamp(fwidth(d), 0.5, 2.0);
     float alpha = 1.0 - smoothstep(-aa, aa, d);
 
-    // The tag has to survive this: it can overhang the edge of a card, and
-    // those pixels are its own even though the ring has nothing there.
-    float taa = clamp(fwidth(dTag), 0.5, 2.0);
-    float ta = tagOn > 0.001 ? 1.0 - smoothstep(-taa, taa, dTag) : 0.0;
-
-    if (alpha <= 0.001 && ta <= 0.001) discard;
+    if (alpha <= 0.001) discard;
 
     // Even mix where the two nearest planes are equidistant, resolving to
     // whichever is clearly nearer beyond uBlend. Both the art and the dim are
@@ -395,35 +344,6 @@ export const fragmentShader = /* glsl */ `
     // A touch of lift where the lip is steepest, so the band reads as a
     // surface catching light rather than only a warp.
     col += bend * uSheen;
-
-    // --- the tag -------------------------------------------------------------
-    if (ta > 0.001) {
-        // Where the ring does not reach, the page is what shows through the
-        // glass, so the label has something real to read there too.
-        vec3 under = mix(uPage, col, alpha);
-        vec3 glass = mix(under, vec3(1.0), uTagQ.x);
-
-        // Rim: lit where it faces the light, dark where it turns away. Signing
-        // it is what gives an edge that reads as thickness rather than as an
-        // outline drawn on.
-        float band = clamp(1.0 + dTag / max(uTagP.z, 1.0), 0.0, 1.0);
-        glass += band * band * uTagQ.y *
-                 dot(tagNormal(ps), vec2(-0.7071, 0.7071));
-
-        // The label. Pure black or pure white, decided per pixel from what that
-        // pixel is sitting on, so a glyph crossing a light edge onto a dark one
-        // changes colour halfway across. A blend cannot do this — inverting a
-        // mid grey returns a mid grey — and picking one colour for the whole
-        // label cannot either.
-        vec2 tuv = (ps - uTag.xy) / (uTagP.xy * 2.0 * abs(uTag.zw)) + 0.5;
-        float m = texture2D(uTagTex, clamp(tuv, 0.0, 1.0)).a;
-        float l = dot(glass, vec3(0.2126, 0.7152, 0.0722));
-        // Narrow, not hard: a step here would alias along the boundary.
-        glass = mix(glass, vec3(1.0 - smoothstep(0.46, 0.54, l)), m);
-
-      col = mix(col, glass, ta);
-      alpha = max(alpha, ta);
-    }
 
     // Written straight through. The atlas is tagged NoColorSpace so sampling
     // returns the authored sRGB values, and this shader adds no output

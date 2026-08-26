@@ -47,10 +47,9 @@ components/
     atlas.js           packs all art into one texture, incrementally
     meta.js            the two type lockups and their morph
     splitText.js       the intro heading ("Works '26")
-    tag.js             the "View" tag that rides the cursor
     gui.js             lil-gui dev panel, dynamically imported
   shaders/
-    planeShaders.js    the ring: SDFs, goo, glass lip, tag. ~430 lines of GLSL
+    planeShaders.js    the ring: SDFs, goo, glass lip. ~390 lines of GLSL
     textShaders.js     the per-glyph reveal for the intro heading
 ```
 
@@ -194,17 +193,19 @@ regresses: blank after a long dev session, fine after a hard reload.
 Listed roughly by how much they matter, so an agent picking up work knows what
 is missing versus what is deliberate.
 
-1. **Clicking a card centres it but nothing opens.** The "View" tag promises a
-   destination that does not exist. `pick()` returns early when the card is
-   already at the front — that early return is where navigation belongs.
+1. **Clicking a card centres it and opens the lightbox, but there is no
+   navigation.** The lightbox is the selected plane borrowing a larger scale
+   and reversing back — it goes nowhere. `pickThenOpen()` is where a real
+   destination would hang off a centred card.
 2. **Fonts are `.otf`/`.ttf`, ~340 KB.** Converting to `woff2` would cut that
    by roughly 60%. PP Neue Montreal is also gitignored, so the heading falls
    back on a fresh clone — see below.
 3. **The art is webp but still oversized.** ~3.3 MB across eighteen files. The
    atlas downsamples every one to a 512px cell, so resizing the sources to
    match would cut it again by a large margin.
-4. **`prefers-reduced-motion` is unhandled.** Six seconds of animated blur with
-   no escape hatch.
+4. **The entry ignores `prefers-reduced-motion`.** The lightbox honours it
+   (open/close snap instantly), but the six-second entry blur has no escape
+   hatch.
 5. **No keyboard control.** Arrow keys should step the ring; the project column
    is `pointer-events-none` and cannot be clicked to jump.
 6. **All the sample data is placeholder.** Every `type` and `year` in
@@ -240,12 +241,6 @@ Font families are looked up **by name**: the strings in `params.js`
 `app/globals.css`, and the `textFont` dropdown in `gui.js` lists them a third
 time. A name with no matching block falls back to system sans silently, which
 looks like a rendering bug rather than a missing file.
-
-## Dead files — safe to delete
-
-- `components/TwoPlaneMorph.jsx` — an earlier experiment, nothing imports it.
-- `shader` (repo root, no extension) — a 13 KB paste of somebody's component
-  library docs. Not code, not referenced.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

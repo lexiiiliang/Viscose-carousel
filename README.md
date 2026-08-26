@@ -21,10 +21,6 @@ melt into one another as they close up and string thin threads as they pull
 apart. The cursor doesn't draw anything — it softens the surface under itself,
 leans nearby cards toward it and webs honey back between them.
 
-**[Read the breakdown →](BREAKDOWN.md)** — where the idea came from, how
-viscosity became a distance field, and the four things that only showed up
-once it moved.
-
 <!-- TODO: a screen recording would sell this far better than stills. The
      whole point is what happens between frames. -->
 
@@ -65,8 +61,7 @@ Built with Next.js 16 (App Router), React 19, Three.js, GSAP and Tailwind v4.
   finger has no hover state, so it sits behind a deliberate gesture.
 
 ![Hovering a card: the neighbours above and below have backed away and dimmed,
-threads stretch between them, and the View tag has appeared on the
-cursor](docs/hover.png)
+and threads stretch between them](docs/hover.png)
 
 The threads are not drawn between the cards — they're part of the same
 distance field, so they thin, sag and dissolve on their own as the gap opens.
@@ -134,7 +129,7 @@ Three families, declared in `app/globals.css` and looked up **by name** from
 | ---------------- | -------------------------------------- | -------- | ------------------------------------------------------ |
 | Satoshi          | project name, discipline, index column | 400, 500 | [Fontshare](https://fontshare.com/fonts/satoshi), free |
 | Geist            | number, year, load counter             | 400      | [OFL](https://github.com/vercel/geist-font)            |
-| PP Neue Montreal | intro heading, cursor tag              | 400      | Pangram Pangram, **commercial**                        |
+| PP Neue Montreal | intro heading                          | 400      | Pangram Pangram, **commercial**                        |
 
 > [!IMPORTANT]
 > **PP Neue Montreal is not licensed by this project.** It is a commercial
@@ -167,21 +162,19 @@ components/
     atlas.js         packs all the art into one texture
     meta.js          the type either side of the ring
     splitText.js     the intro heading
-    tag.js           the "View" tag on the cursor
     gui.js           the dev panel
   shaders/
-    planeShaders.js  the ring — SDFs, goo, glass, tag
+    planeShaders.js  the ring — SDFs, goo, glass
     textShaders.js   the heading's per-glyph reveal
 ```
 
 Two ideas explain most of the rest.
 
-**One shader, one draw call.** The ring, the threads between cards, the glass
-lip along the screen edges and the cursor tag are all evaluated per pixel in
+**One shader, one draw call.** The ring, the threads between cards and the
+glass lip along the screen edges are all evaluated per pixel in
 `planeShaders.js`. Card positions arrive as uniform arrays, and the fragment
 shader blends their distance fields with a smooth minimum — that soft blend is
-the goo. Because the tag is drawn in the same pass, its label can invert
-against whatever pixels it happens to be sitting on.
+the goo.
 
 ![The ring mid-entry: cards on the right have separated cleanly while those on
 the left are still fused into one another with thick necks between
@@ -208,10 +201,8 @@ and the handful of things here that look like bugs but aren't — see
 This is a work in progress, published because the rendering approach might be
 useful to someone. Known gaps:
 
-- **Clicking a card centres it but doesn't open anything.** The "View" tag
-  promises a destination that doesn't exist yet.
-- **No reduced-motion support.** Six seconds of animated blur with no escape
-  hatch.
+- **Clicking a card opens a lightbox but goes nowhere.** The card zooms up and
+  back — there's no destination or detail view behind it yet.
 - **No keyboard control.** Arrow keys should step the ring; the project column
   can't be clicked to jump.
 - **Phone widths are approximate.** The tight breakpoint was tuned at the 640
