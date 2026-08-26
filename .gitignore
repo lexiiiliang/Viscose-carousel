@@ -24,6 +24,9 @@
 .DS_Store
 *.pem
 
+# Claude Code local config
+/.claude/
+
 # Local high-resolution photo sources. The optimized public copies are tracked.
 /gallery-source/
 
