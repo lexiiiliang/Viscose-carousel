@@ -1,7 +1,6 @@
 @import "tailwindcss";
 
-/* Family names here have to match the strings in ring/params.js — nameFont,
-   idxFont and textFont are looked up by name, not imported. */
+/* Family names here are referenced by the .meta-name / .meta-idx rules below. */
 
 /* Project names and disciplines. Two real weights, so nameWeight 400 and 500
    both resolve to a cut rather than a synthesised one. */
@@ -21,20 +20,10 @@
   font-display: swap;
 }
 
-/* Numbers, years and the load counter. */
+/* Numbers and years. */
 @font-face {
   font-family: "Geist";
   src: url("/Geist-Regular.ttf") format("truetype");
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-/* The intro heading and the cursor tag, both rasterised to canvas. Book is
-   the only cut installed, so textWeight has nothing to switch between. */
-@font-face {
-  font-family: "PP Neue Montreal";
-  src: url("/ppneuemontreal-book.otf") format("opentype");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -49,6 +38,179 @@ body {
   overscroll-behavior: none;
 }
 
-canvas {
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------------------------------------------------------------- carousel */
+.carousel-root {
+  position: fixed;
+  inset: 0;
+  color: #0a0a0a;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A flat wheel in the screen plane — no 3D. The stage just captures input. */
+.stage {
+  position: absolute;
+  inset: 0;
+  touch-action: none; /* the swipe is the carousel, not a page pan */
+  overflow: hidden;
+}
+
+.ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  /* The wheel turns about its own centre; the centre is shoved off-screen left
+     by the inline translateX so only the right arc shows. */
+  transform-origin: 0 0;
+  /* Snap-back and keyboard/wheel steps glide; dragging overrides this inline. */
+  transition: transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.card {
+  position: absolute;
+  /* Centre the card on its slot before it is rotated out along the radius. */
+  top: calc(var(--card-h) / -2);
+  left: calc(var(--card-w) / -2);
+  width: var(--card-w);
+  height: var(--card-h);
+  margin: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #e6e6e6;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 0.4s ease, filter 0.4s ease;
+  /* Staggered fade on entry. Opacity only: the positional transform lives
+     inline, and a keyframe touching transform would override it. */
+  animation: card-in 0.6s both;
+  animation-delay: calc(var(--i) * 45ms);
+}
+
+:root {
+  --card-w: 300px;
+  --card-h: 200px;
+}
+
+/* On narrow screens shrink the cards so the side meta clears the front one.
+   The ring radius is fixed in JS, so smaller cards simply sit further apart. */
+@media (max-width: 640px) {
+  :root {
+    --card-w: 190px;
+    --card-h: 127px;
+  }
+}
+
+.card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   display: block;
+  pointer-events: none;
+}
+
+/* The front card is the lit one; the rest stand back, dimmed. */
+.card-front {
+  opacity: 1;
+  filter: none;
+}
+.card:hover {
+  opacity: 1;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- meta */
+.meta {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  letter-spacing: -0.01em;
+  pointer-events: none;
+}
+.meta-left {
+  left: 5.5vw;
+  align-items: flex-start;
+}
+.meta-right {
+  right: 5.5vw;
+  align-items: flex-end;
+  text-align: right;
+}
+.meta-name {
+  font-family: "Satoshi", system-ui, sans-serif;
+  font-weight: 500;
+  font-size: clamp(20px, 1.7vw, 26px);
+}
+.meta-idx {
+  font-family: "Geist", ui-monospace, monospace;
+  font-weight: 400;
+  font-size: clamp(13px, 1.1vw, 16px);
+  opacity: 0.6;
+}
+
+/* ---------------------------------------------------------------- lightbox */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(250, 250, 250, 0.9);
+  backdrop-filter: blur(4px);
+  animation: fade-in 0.35s ease both;
+}
+.lightbox img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: zoom-in 0.4s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ring {
+    transition: none;
+  }
+  .card,
+  .lightbox,
+  .lightbox img {
+    animation: none;
+  }
 }
