@@ -39,7 +39,10 @@ export default function SimpleCarousel() {
   const ringRef = useRef(null);
   const wheelAcc = useRef(0);
   // Drag bookkeeping, kept in a ref so the move handler is not rebuilt per frame.
-  const drag = useRef({ active: false, startY: 0, startTurn: 0, moved: 0 });
+  const drag = useRef({ active: false, startY: 0, startTurn: 0, moved: 0, captured: false, hitIndex: -1 });
+  // Pending "centre then open" timer for clicks on off-centre cards.
+  const openTimer = useRef(null);
+  useEffect(() => () => clearTimeout(openTimer.current), []);
 
   const go = useCallback((delta) => {
     setTurn((t) => Math.round(t) + delta);
@@ -60,16 +63,24 @@ export default function SimpleCarousel() {
   /* ----------------------------------------------------------------- drag */
   const onPointerDown = useCallback((e) => {
     if (lightbox >= 0) return;
+    // Which card was pressed — read now, before any rotation moves the DOM.
+    const cardEl = e.target.closest?.(".card");
+    const hitIndex = cardEl ? Number(cardEl.dataset.i) : -1;
     drag.current = {
       active: true,
       startY: e.clientY,
       startTurn: turn,
       moved: 0,
+      captured: false,
+      hitIndex,
     };
     setDragging(true);
-    // Guard the capture: synthetic or already-released pointers throw here.
+    // We handle tap-to-open in onPointerUp rather than a native onClick: a
+    // pointer capture (needed for smooth dragging) retargets the click to the
+    // stage, so a click handler on the card would never fire.
     try {
       e.currentTarget.setPointerCapture?.(e.pointerId);
+      drag.current.captured = true;
     } catch {}
   }, [lightbox, turn]);
 
@@ -85,16 +96,35 @@ export default function SimpleCarousel() {
 
   const onPointerUp = useCallback((e) => {
     if (!drag.current.active) return;
-    const clean = drag.current.moved < 6; // a tap, not a drag
+    const { moved, hitIndex, startTurn } = drag.current;
     drag.current.active = false;
     setDragging(false);
-    try {
-      e.currentTarget.releasePointerCapture?.(e.pointerId);
-    } catch {}
-    setTurn((t) => Math.round(t)); // snap to the nearest slot
+    if (drag.current.captured) {
+      try {
+        e.currentTarget.releasePointerCapture?.(e.pointerId);
+      } catch {}
+    }
 
-    // A near-stationary press on the front card opens it.
-    if (clean) setLightbox(mod(Math.round(drag.current.startTurn), COUNT));
+    // A drag: snap to the nearest slot and stop.
+    if (moved >= 6) {
+      setTurn((t) => Math.round(t));
+      return;
+    }
+
+    // A tap. Snap back to where we started (no accidental fractional turn).
+    setTurn(Math.round(startTurn));
+    if (hitIndex < 0) return; // tapped empty space
+
+    const front = hitIndex === mod(Math.round(startTurn), COUNT);
+    if (front) {
+      setLightbox(hitIndex);
+    } else {
+      // Bring the tapped card round first, then open once it lands.
+      setTurn(hitIndex);
+      setLightbox(-1);
+      clearTimeout(openTimer.current);
+      openTimer.current = setTimeout(() => setLightbox(hitIndex), 620);
+    }
   }, []);
 
   /* ------------------------------------------------------------- keyboard */
@@ -150,17 +180,13 @@ export default function SimpleCarousel() {
             return (
               <figure
                 key={p.file}
+                data-i={i}
                 className={`card${front ? " card-front" : ""}`}
                 style={{
                   "--i": i,
                   // rotate then translate: the card sits at its slot on the
                   // circle and is turned radially, long edge pointing outward.
                   transform: `rotate(${i * STEP}deg) translateX(${RADIUS}px)`,
-                }}
-                onClick={() => {
-                  // Clicking a non-front card brings it round rather than opening.
-                  if (front) setLightbox(i);
-                  else setTurn(i);
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
