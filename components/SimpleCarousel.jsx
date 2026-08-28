@@ -23,6 +23,12 @@ const WHEEL_THRESHOLD = 100;
 const DRAG_PER_CARD = 90;
 
 const mod = (n, m) => ((n % m) + m) % m;
+// Signed step count from `from` to `to` around the ring, choosing whichever
+// direction is shorter (e.g. index 0 -> 17 on an 18-card ring is -1, not +17).
+const shortestDelta = (from, to, count) => {
+  const d = mod(to - from, count);
+  return d > count / 2 ? d - count : d;
+};
 
 export default function SimpleCarousel() {
   // The live rotation of the ring, in cards (not degrees) so it reads straight
@@ -115,12 +121,14 @@ export default function SimpleCarousel() {
     setTurn(Math.round(startTurn));
     if (hitIndex < 0) return; // tapped empty space
 
-    const front = hitIndex === mod(Math.round(startTurn), COUNT);
+    const startWhole = Math.round(startTurn);
+    const front = hitIndex === mod(startWhole, COUNT);
     if (front) {
       setLightbox(hitIndex);
     } else {
-      // Bring the tapped card round first, then open once it lands.
-      setTurn(hitIndex);
+      // Bring the tapped card round first, then open once it lands — turning
+      // whichever way is shorter rather than snapping to the raw index.
+      setTurn(startWhole + shortestDelta(mod(startWhole, COUNT), hitIndex, COUNT));
       setLightbox(-1);
       clearTimeout(openTimer.current);
       openTimer.current = setTimeout(() => setLightbox(hitIndex), 620);
