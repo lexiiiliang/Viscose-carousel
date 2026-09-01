@@ -1,5 +1,5 @@
-import SimpleCarousel from "@/components/SimpleCarousel";
+import CarouselTabs from "@/components/CarouselTabs";
 
 export default function Page() {
-  return <SimpleCarousel />;
+  return <CarouselTabs />;
 }

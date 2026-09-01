@@ -115,6 +115,20 @@ body {
   }
 }
 
+/* Vertical composition: the same ring, but portrait cards fanned across the
+   foot of the screen. Only the card aspect changes — the JS swaps the offset
+   and drag axis. The vars are read by .card above, which inherits them here. */
+.carousel-root.vertical {
+  --card-w: 210px;
+  --card-h: 315px;
+}
+@media (max-width: 640px) {
+  .carousel-root.vertical {
+    --card-w: 150px;
+    --card-h: 225px;
+  }
+}
+
 .card img {
   width: 100%;
   height: 100%;
@@ -159,6 +173,22 @@ body {
   align-items: flex-end;
   text-align: right;
 }
+/* Vertical composition parks the meta above and below the fan instead of to
+   the sides, centred on the ring. */
+.meta-top,
+.meta-bottom {
+  top: auto;
+  left: 50%;
+  transform: translateX(-50%);
+  align-items: center;
+  text-align: center;
+}
+.meta-top {
+  top: 6vh;
+}
+.meta-bottom {
+  bottom: 6vh;
+}
 .meta-name {
   font-family: "Satoshi", system-ui, sans-serif;
   font-weight: 500;
@@ -169,6 +199,52 @@ body {
   font-weight: 400;
   font-size: clamp(13px, 1.1vw, 16px);
   opacity: 0.6;
+}
+
+/* ---------------------------------------------------------------- tabs */
+/* Composition toggle. Tucked into the bottom-right corner — clear of the front
+   card and the side/top-bottom meta in both compositions, and away from the
+   dev-tools button in the bottom-left. Above the stage so its clicks are not
+   swallowed by the drag surface, but below the lightbox (z-50). */
+.carousel-tabs {
+  position: fixed;
+  right: 2vw;
+  bottom: 3vh;
+  z-index: 40;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(10, 10, 10, 0.05);
+  backdrop-filter: blur(6px);
+}
+.tab {
+  appearance: none;
+  border: 0;
+  margin: 0;
+  padding: 8px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: transparent;
+  color: #0a0a0a;
+  opacity: 0.45;
+  cursor: pointer;
+  transition: opacity 0.25s ease, background 0.25s ease;
+}
+.tab svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  fill: currentColor;
+}
+.tab:hover {
+  opacity: 0.8;
+}
+.tab-active {
+  opacity: 1;
+  background: #fafafa;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 /* ---------------------------------------------------------------- lightbox */

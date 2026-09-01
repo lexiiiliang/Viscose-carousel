@@ -5,16 +5,21 @@ import { PROJECTS } from "./ring/projects";
 
 // Ring geometry — a flat 2D wheel in the screen plane, exactly as the original:
 // cards sit on a circle (cos/sin) and each is turned to point radially outward.
-// The circle's centre is pushed off the left edge and the radius is large, so
-// only a shallow arc of the right side shows, with one card facing front.
+// The circle's centre is pushed off one edge and the radius is large, so only a
+// shallow arc shows, with one card facing front.
+//
+// The same wheel serves both compositions. In "horizontal" the centre is shoved
+// off the LEFT, the front card lands at 3 o'clock (screen centre), neighbours
+// arc above/below and the drag is vertical. In "vertical" the centre is shoved
+// off the TOP, the front card lands at 6 o'clock (screen centre), neighbours fan
+// out left/right like a splayed hand and the drag is horizontal. Only the axis
+// differs; every constant, transition and animation is shared.
 const COUNT = PROJECTS.length;
 const STEP = 360 / COUNT; // degrees between neighbouring cards
 // Radius of the wheel in px. Large relative to the viewport so the visible arc
-// stays gentle. The centre is pushed left by exactly this, landing the front
+// stays gentle. The centre is pushed off by exactly this, landing the front
 // card at screen centre (see .ring transform below).
 const RADIUS = 1150;
-const CARD_W = 300; // px, long edge — keep in sync with --card-w in globals.css
-const CARD_H = CARD_W / 1.5; // aspect locked at 1.5 : 1, as the original
 
 // A wheel gesture fires many small deltas; only step once it clears this.
 // One mouse notch is ~100–120, so this keeps a notch to roughly one card.
@@ -30,7 +35,9 @@ const shortestDelta = (from, to, count) => {
   return d > count / 2 ? d - count : d;
 };
 
-export default function SimpleCarousel() {
+export default function SimpleCarousel({ orientation = "horizontal" }) {
+  const vertical = orientation === "vertical";
+
   // The live rotation of the ring, in cards (not degrees) so it reads straight
   // off the index. Fractional while dragging, snapped back to whole on release.
   const [turn, setTurn] = useState(0);
@@ -45,7 +52,7 @@ export default function SimpleCarousel() {
   const ringRef = useRef(null);
   const wheelAcc = useRef(0);
   // Drag bookkeeping, kept in a ref so the move handler is not rebuilt per frame.
-  const drag = useRef({ active: false, startY: 0, startTurn: 0, moved: 0, captured: false, hitIndex: -1 });
+  const drag = useRef({ active: false, startX: 0, startY: 0, startTurn: 0, moved: 0, captured: false, hitIndex: -1 });
   // Pending "centre then open" timer for clicks on off-centre cards.
   const openTimer = useRef(null);
   useEffect(() => () => clearTimeout(openTimer.current), []);
@@ -57,14 +64,17 @@ export default function SimpleCarousel() {
   /* ---------------------------------------------------------------- wheel */
   const onWheel = useCallback((e) => {
     if (lightbox >= 0) return;
-    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    // The vertical fan reads sideways, so its wheel runs opposite the
+    // horizontal one — flip the sign for the vertical composition.
+    const d = vertical ? -raw : raw;
     wheelAcc.current += d;
     while (Math.abs(wheelAcc.current) >= WHEEL_THRESHOLD) {
       const dir = Math.sign(wheelAcc.current);
       setTurn((t) => Math.round(t) + dir);
       wheelAcc.current -= dir * WHEEL_THRESHOLD;
     }
-  }, [lightbox]);
+  }, [lightbox, vertical]);
 
   /* ----------------------------------------------------------------- drag */
   const onPointerDown = useCallback((e) => {
@@ -74,6 +84,7 @@ export default function SimpleCarousel() {
     const hitIndex = cardEl ? Number(cardEl.dataset.i) : -1;
     drag.current = {
       active: true,
+      startX: e.clientX,
       startY: e.clientY,
       startTurn: turn,
       moved: 0,
@@ -92,13 +103,15 @@ export default function SimpleCarousel() {
 
   const onPointerMove = useCallback((e) => {
     if (!drag.current.active) return;
-    const dy = e.clientY - drag.current.startY;
-    drag.current.moved = Math.max(drag.current.moved, Math.abs(dy));
-    // The front card sits at 3 o'clock and its neighbours arc above/below it,
-    // so the wheel travels vertically here. Dragging up carries the card up and
-    // brings the next one down into the centre.
-    setTurn(drag.current.startTurn - dy / DRAG_PER_CARD);
-  }, []);
+    // Horizontal composition travels vertically (neighbours sit above/below the
+    // front card); vertical composition travels horizontally (neighbours fan out
+    // to the sides). Dragging "away from" the next card carries it into centre.
+    const d = vertical
+      ? e.clientX - drag.current.startX
+      : e.clientY - drag.current.startY;
+    drag.current.moved = Math.max(drag.current.moved, Math.abs(d));
+    setTurn(drag.current.startTurn - d / DRAG_PER_CARD);
+  }, [vertical]);
 
   const onPointerUp = useCallback((e) => {
     if (!drag.current.active) return;
@@ -140,8 +153,9 @@ export default function SimpleCarousel() {
     const onKey = (e) => {
       if (e.key === "Escape") return setLightbox(-1);
       if (lightbox >= 0) return;
-      if (e.key === "ArrowRight") go(1);
-      if (e.key === "ArrowLeft") go(-1);
+      // Both arrow pairs step the ring, so the keys match either composition.
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") go(1);
+      if (e.key === "ArrowLeft" || e.key === "ArrowUp") go(-1);
       if (e.key === "Enter" || e.key === " ") setLightbox(index);
     };
     window.addEventListener("keydown", onKey);
@@ -149,17 +163,22 @@ export default function SimpleCarousel() {
   }, [go, index, lightbox]);
 
   const rotation = -turn * STEP;
+  // The offset axis: push the wheel centre off the top for vertical, off the
+  // left for horizontal, so the front card lands dead centre either way.
+  const ringTransform = vertical
+    ? `translateY(-${RADIUS}px) rotate(${rotation}deg)`
+    : `translateX(-${RADIUS}px) rotate(${rotation}deg)`;
 
   return (
-    <main className="carousel-root">
-      {/* left: number · name */}
-      <div className="meta meta-left" aria-hidden="true">
+    <main className={`carousel-root${vertical ? " vertical" : ""}`}>
+      {/* leading meta — number · name (left for horizontal, top for vertical) */}
+      <div className={`meta ${vertical ? "meta-top" : "meta-left"}`} aria-hidden="true">
         <span className="meta-idx">{String(index + 1).padStart(2, "0")}</span>
         <span className="meta-name">{project.name}</span>
       </div>
 
-      {/* right: type · year */}
-      <div className="meta meta-right" aria-hidden="true">
+      {/* trailing meta — type · year (right for horizontal, bottom for vertical) */}
+      <div className={`meta ${vertical ? "meta-bottom" : "meta-right"}`} aria-hidden="true">
         <span className="meta-name">{project.type}</span>
         <span className="meta-idx">{project.year}</span>
       </div>
@@ -177,14 +196,17 @@ export default function SimpleCarousel() {
           ref={ringRef}
           className="ring"
           style={{
-            // The wheel's centre is pushed left by exactly one radius, so the
-            // card at 3 o'clock lands at screen centre and the rest curve away.
-            transform: `translateX(-${RADIUS}px) rotate(${rotation}deg)`,
+            // The wheel's centre is pushed off by exactly one radius, so the
+            // front card lands at screen centre and the rest curve away.
+            transform: ringTransform,
             transition: dragging ? "none" : undefined,
           }}
         >
           {PROJECTS.map((p, i) => {
             const front = i === index;
+            const cardTransform = vertical
+              ? `rotate(${i * STEP}deg) translateY(${RADIUS}px)`
+              : `rotate(${i * STEP}deg) translateX(${RADIUS}px)`;
             return (
               <figure
                 key={p.file}
@@ -194,7 +216,7 @@ export default function SimpleCarousel() {
                   "--i": i,
                   // rotate then translate: the card sits at its slot on the
                   // circle and is turned radially, long edge pointing outward.
-                  transform: `rotate(${i * STEP}deg) translateX(${RADIUS}px)`,
+                  transform: cardTransform,
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
