@@ -124,11 +124,7 @@ export function mountGui(GUI, { params, state, info, actions }) {
   lightbox.add(params, "lightboxTime", 0.05, 3, 0.05).name("time (s)");
   lightbox.add(params, "lightboxFill", 0.5, 1, 0.01).name("viewport fill");
   lightbox
-    .add(params, "lightboxEase", [
-      "elastic.out(1, 0.6)",
-      "power2.inOut",
-      "power3.inOut",
-    ])
+    .add(params, "lightboxEase", ["power2.inOut", "power3.inOut"])
     .name("ease");
 
   // -- the intro heading ----------------------------------------------------

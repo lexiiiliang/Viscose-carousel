@@ -105,7 +105,7 @@ export function defaultParams() {
     pickEase: "power3.inOut",
     lightboxTime: 0.55,
     lightboxFill: 0.92, // fraction of the viewport available to the large card
-    lightboxEase: "elastic.out(1, 0.6)",
+    lightboxEase: "power3.inOut",
 
     // -- the intro heading, in the scene ---------------------------------
     text: "Works '26",
