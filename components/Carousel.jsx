@@ -66,32 +66,18 @@ export default function Carousel() {
     // Read-only panel readouts, so an invalid ring is visible rather than
     // silent and the reference window can be matched to the live one.
     const info = { restingGap: 0, window: "", scale: 1, band: "wide" };
-    // A separate image keeps the preview at its final size throughout the fade.
-    const preview = document.createElement("div");
-    Object.assign(preview.style, {
-      position: "fixed",
-      inset: "0",
-      zIndex: "50",
-      display: "none",
-      alignItems: "center",
-      justifyContent: "center",
-      background: "rgba(0, 0, 0, 0.92)",
-      pointerEvents: "none",
-      opacity: "0",
-    });
-    const previewImage = document.createElement("img");
-    previewImage.alt = "Project image preview";
-    Object.assign(previewImage.style, {
-      objectFit: "contain",
-      width: "auto",
-      height: "auto",
-    });
-    preview.appendChild(previewImage);
-    container.appendChild(preview);
+    // The lightbox is not a second element. It is the selected shader plane
+    // borrowing a different position and scale, then reversing that same
+    // tween to return. Rotation is intentionally absent from the transition.
     const lightbox = {
       active: false,
       closing: false,
+      plane: -1,
       progress: 0,
+      originPos: new THREE.Vector2(),
+      originScale: new THREE.Vector2(1, 1),
+      originRot: 0,
+      targetScale: 1,
       tween: null,
     };
 
@@ -485,8 +471,7 @@ export default function Carousel() {
     const finishLightboxClose = () => {
       lightbox.active = false;
       lightbox.closing = false;
-      preview.style.display = "none";
-      preview.style.opacity = "0";
+      lightbox.plane = -1;
       lightbox.progress = 0;
       lightbox.tween?.kill();
       lightbox.tween = null;
@@ -513,14 +498,22 @@ export default function Carousel() {
     };
 
     const openLightbox = (hit) => {
+      const sc = uniforms.uScale.value[hit];
+      const pos = uniforms.uPos.value[hit];
+      const W = uniforms.uSize.value.x;
+      const H = uniforms.uSize.value.y;
+
       lightbox.active = true;
       lightbox.closing = false;
+      lightbox.plane = hit;
       lightbox.progress = 0;
-      previewImage.src = `/${IMAGE_FILES[Math.round(uniforms.uScale.value[hit].w)]}`;
-      previewImage.style.maxWidth = `${params.lightboxFill * 100}vw`;
-      previewImage.style.maxHeight = `${params.lightboxFill * 100}vh`;
-      preview.style.display = "flex";
-      preview.style.opacity = "0";
+      lightbox.originPos.copy(pos);
+      lightbox.originScale.set(sc.x, sc.y);
+      lightbox.originRot = uniforms.uRot.value[hit];
+      lightbox.targetScale = Math.min(
+        (viewW * params.lightboxFill) / W,
+        (viewH * params.lightboxFill) / H,
+      );
       spinVel = 0;
       settling = false;
       dragging = false;
@@ -529,7 +522,6 @@ export default function Carousel() {
 
       if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         lightbox.progress = 1;
-        preview.style.opacity = "1";
         return;
       }
 
@@ -537,9 +529,6 @@ export default function Carousel() {
         progress: 1,
         duration: params.lightboxTime,
         ease: params.lightboxEase,
-        onUpdate: () => {
-          preview.style.opacity = String(lightbox.progress);
-        },
         paused: true,
       });
       lightbox.tween.eventCallback("onReverseComplete", finishLightboxClose);
@@ -708,7 +697,10 @@ export default function Carousel() {
 
       const step = TAU / count;
       const spread = clamp01(state.spread);
-      const backgroundVisibility = 1;
+      const lightboxT = clamp01(lightbox.progress);
+      const backgroundVisibility = lightbox.active
+        ? 1 - smoothstep(0, 0.65, lightboxT)
+        : 1;
 
       // Band values are picked per frame rather than latched on resize, so
       // dragging any of these sliders shows up straight away.
@@ -906,6 +898,30 @@ export default function Carousel() {
           1 - params.sideDim * sideF[i],
           cell,
         );
+
+        if (lightbox.active) {
+          if (i === lightbox.plane) {
+            // One shader plane owns the whole journey. Its rotation is held
+            // fixed, so reversing the tween only retraces position and scale.
+            const t = lightbox.progress;
+            uniforms.uPos.value[i].set(
+              lightbox.originPos.x * (1 - t),
+              lightbox.originPos.y * (1 - t),
+            );
+            uniforms.uRot.value[i] = lightbox.originRot;
+            uniforms.uScale.value[i].set(
+              lightbox.originScale.x +
+                (lightbox.targetScale - lightbox.originScale.x) * t,
+              lightbox.originScale.y +
+                (lightbox.targetScale - lightbox.originScale.y) * t,
+              1,
+              cell,
+            );
+          } else {
+            uniforms.uScale.value[i].x *= backgroundVisibility;
+            uniforms.uScale.value[i].y *= backgroundVisibility;
+          }
+        }
 
         // Same box the shader draws, tested in the plane's own frame, so it
         // answers for the card as it actually is: turned, leaned and swollen.
@@ -1369,7 +1385,6 @@ export default function Carousel() {
       clearTimeout(fontFallback);
       renderer.setAnimationLoop(null);
       lightbox.tween?.kill();
-      preview.remove();
       pickTween?.kill();
 
       window.removeEventListener("resize", onResize);
