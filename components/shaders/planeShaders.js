@@ -384,13 +384,7 @@ export const fragmentShader = /* glsl */ `
       if (abs(bq.x) < uBeadLP.x && abs(bq.y) < uBeadLP.y) {
         glyph = texture2D(uBeadTex, bq / (2.0 * uBeadLP.xy) + 0.5).g * uBeadL.x;
       }
-      // Solid contrasting type stays readable as different photos pass beneath.
-      vec2 localPoint = vec2(bq.x * cr + bq.y * sr, -bq.x * sr + bq.y * cr);
-      vec2 centreUV = clamp(uv0 - localPoint / max(uBeadR.zw, vec2(1.0)), 0.002, 0.998);
-      vec3 centreColor = texture2D(uAtlas, atlasUV(centreUV, im0)).rgb;
-      float lum = dot(mix(centreColor, vec3(0.96), uBeadGlass.y), vec3(0.2126, 0.7152, 0.0722));
-      vec3 label = lum > 0.45 ? vec3(0.025) : vec3(1.0);
-      glass = mix(glass, label, glyph);
+      glass = mix(glass, vec3(0.025), glyph);
       col = mix(col, glass, cover);
     }
     gl_FragColor = vec4(col, alpha);
