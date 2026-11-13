@@ -103,16 +103,13 @@ export function defaultParams() {
     snapFrom: 1, // rad/s under which the ring commits to a slot
     pickTime: 0.55, // click-to-centre: seconds for one slot, root-scaled
     pickEase: "power3.inOut",
-    beadSize: 14, // px across at rest
-    beadPillH: 15, // px, half the pill's height over a card
-    beadPillPad: 15, // px of honey either side of the word
-    beadTail: 0.38, // the tail's radius, as a fraction of the head's
-    beadLag: 0.3, // how fast the tail catches up, per 60fps frame
-    beadStretch: 2.6, // longest the drop gets, in head radii
-    beadMelt: 20, // px of blend between it and a card
-    beadReach: 64, // px from a card's edge at which the drop starts reaching for it
-    beadSnap: 240, // px a thread stretches before it lets go
-    beadHold: 1.3, // s a thread lasts if it is not pulled
+    beadPillH: 19, // px, half the glass capsule's height
+    beadPillPad: 18,
+    beadResponse: 0.22,
+    beadRefraction: 7, // px of lens displacement near the rim
+    beadTint: 0.22,
+    beadRim: 1.4, // px of bevel
+    beadHighlight: 0.55,
     tagText: "View",
     wordSize: 13, // px
 
@@ -185,7 +182,7 @@ export function defaultParams() {
     pull: 26, // px a plane leans toward the cursor
     grab: 0.14, // how fast a plane takes up a lean, per 60fps frame
     release: 0.06, // and how slowly it lets go — asymmetric on purpose
-    web: 0.2, // hovered thread width, as a fraction of the facing edge
+    web: 0, // hovered thread width, as a fraction of the facing edge
     webReach: 1.15,
     wave: 4, // px of capillary wake at full pointer speed
     waveFreq: 0.05,

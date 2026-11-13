@@ -65,7 +65,7 @@ export const fragmentShader = /* glsl */ `
   uniform vec4 uMouse;  // cursor.xy px, presence 0..1, blend px added at it
   uniform vec4 uBead;
   uniform vec4 uBeadR;
-  uniform vec4 uBeadT;
+  uniform vec4 uBeadGlass;
   uniform vec4 uBeadL;
   uniform vec4 uBeadLP;
   uniform sampler2D uBeadTex;
@@ -182,20 +182,6 @@ export const fragmentShader = /* glsl */ `
 
     // Ends are square and buried inside the planes, so they never show.
     return max(abs(along) - len * 0.5, abs(across) - r);
-  }
-
-  float sdDrop(vec2 p, vec2 a, vec2 b, float ra, float rb) {
-    vec2 ba = b - a;
-    float h = dot(ba, ba);
-    float dr = ra - rb;
-    if (h <= dr * dr + 0.01) return length(p - a) - ra;
-    p -= a;
-    vec2 q = vec2(abs(dot(p, vec2(ba.y, -ba.x))), dot(p, ba)) / h;
-    vec2 c = vec2(sqrt(h - dr * dr), dr);
-    float k = c.x * q.y - c.y * q.x;
-    if (k < 0.0) return sqrt(h * dot(q, q)) - ra;
-    if (k > c.x) return sqrt(h * (dot(q, q) + 1.0 - 2.0 * q.y)) - rb;
-    return dot(c, q) - ra;
   }
 
   // smooth minimum — this is what makes the shapes read as liquid.
@@ -315,18 +301,12 @@ export const fragmentShader = /* glsl */ `
          * uMelt.y * exp(-toMouse / max(uMelt.x, 1.0));
     }
 
+    // The capsule stays independent of the card's field: no bridges or tails.
     float db = 1e6;
-    float dd = 1e6;
+    vec2 bq = p - uBead.xy;
     if (uBeadR.x > 0.05) {
-      float rh = uBeadR.x;
-      float pill = sdRoundBox(p - uBead.xy, vec2(max(uBeadL.y, rh), rh), rh);
-      dd = smin(pill, sdDrop(p, uBead.xy, uBead.zw, rh, uBeadR.y), 3.0);
-      db = dd;
-      if (uBeadT.z > -3.0) {
-        float dh = sdBridge(p, uBeadT.xy, uBead.xy, uBeadT.z, uBeadT.w, uBeadL.z);
-        db = smin(db, dh, uBeadL.w);
-      }
-      d = smin(d, db, uBeadR.z);
+      db = sdRoundBox(bq, vec2(max(uBeadL.y, uBeadR.x), uBeadR.x), uBeadR.x);
+      d = min(d, db);
     }
 
     // Clamped, not just floored: the distance cull above leaves a step in the
@@ -383,15 +363,36 @@ export const fragmentShader = /* glsl */ `
     // returns the authored sRGB values, and this shader adds no output
     // encoding of its own — decoding on read without encoding on write is
     // what darkens everything.
-    // Ink follows the same distance field; the word reveals the original art.
     float beadAA = clamp(fwidth(db), 0.5, 2.0);
-    float ink = (1.0 - smoothstep(-beadAA, beadAA, db));
-    float glyph = 0.0;
-    vec2 bq = p - uBead.xy;
-    if (uBeadL.x > 0.001 && abs(bq.x) < uBeadLP.x && abs(bq.y) < uBeadLP.y) {
-      glyph = texture2D(uBeadTex, bq / (2.0 * uBeadLP.xy) + 0.5).g * uBeadL.x;
+    float cover = 1.0 - smoothstep(-beadAA, beadAA, db);
+    if (cover > 0.001) {
+      float radius = max(uBeadR.x, 0.1);
+      vec2 core = vec2(clamp(bq.x, -uBeadL.y + radius, uBeadL.y - radius), 0.0);
+      vec2 normal = (bq - core) / max(length(bq - core), 0.001);
+      float edge = 1.0 - smoothstep(0.0, radius, -db);
+      vec2 offset = normal * uBeadGlass.x * edge * edge;
+      float cr = cos(uBeadR.y), sr = sin(uBeadR.y);
+      vec2 localOffset = vec2(offset.x * cr + offset.y * sr, -offset.x * sr + offset.y * cr);
+      vec2 lensUV = clamp(uv0 + localOffset / max(uBeadR.zw, vec2(1.0)), 0.002, 0.998);
+      vec3 glass = texture2D(uAtlas, atlasUV(lensUV, im0)).rgb;
+      glass = mix(glass, vec3(0.92, 0.96, 1.0), uBeadGlass.y);
+      float rim = 1.0 - smoothstep(0.0, uBeadGlass.z + beadAA, -db);
+      float light = 0.5 + 0.5 * dot(normal, normalize(vec2(-0.5, 1.0)));
+      glass += rim * light * uBeadGlass.w;
+      glass -= rim * (1.0 - light) * uBeadGlass.w * 0.35;
+      float glyph = 0.0;
+      if (abs(bq.x) < uBeadLP.x && abs(bq.y) < uBeadLP.y) {
+        glyph = texture2D(uBeadTex, bq / (2.0 * uBeadLP.xy) + 0.5).g * uBeadL.x;
+      }
+      // Solid contrasting type stays readable as different photos pass beneath.
+      vec2 localPoint = vec2(bq.x * cr + bq.y * sr, -bq.x * sr + bq.y * cr);
+      vec2 centreUV = clamp(uv0 - localPoint / max(uBeadR.zw, vec2(1.0)), 0.002, 0.998);
+      vec3 centreColor = texture2D(uAtlas, atlasUV(centreUV, im0)).rgb;
+      float lum = dot(mix(centreColor, vec3(0.96), uBeadGlass.y), vec3(0.2126, 0.7152, 0.0722));
+      vec3 label = lum > 0.45 ? vec3(0.025) : vec3(1.0);
+      glass = mix(glass, label, glyph);
+      col = mix(col, glass, cover);
     }
-    col = mix(col, vec3(0.04), ink * (1.0 - glyph));
     gl_FragColor = vec4(col, alpha);
   }
 `;

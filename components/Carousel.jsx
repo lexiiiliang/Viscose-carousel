@@ -146,7 +146,7 @@ export default function Carousel() {
       uMelt: { value: new THREE.Vector4() },
       uBead: { value: new THREE.Vector4(-1e4, -1e4, -1e4, -1e4) },
       uBeadR: { value: new THREE.Vector4() },
-      uBeadT: { value: new THREE.Vector4(0, 0, -100, -100) },
+      uBeadGlass: { value: new THREE.Vector4() },
       uBeadL: { value: new THREE.Vector4() },
       uBeadLP: { value: new THREE.Vector4(1, 1, 1, 0) },
       uBeadTex: { value: null },

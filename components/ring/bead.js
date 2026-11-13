@@ -5,9 +5,9 @@ const SHEET_W = 160;
 const SHEET_H = 40;
 
 /**
- * The word cut out of the cursor's bead when it opens into a pill over a
- * card, on a small sheet the ring's shader reads at the pointer: where a
- * glyph is, the pill shows the picture under it instead of its honey.
+ * The word mask for the glass capsule, on a small sheet the ring shader
+ * reads at the pointer. Keeping the type in the same pass makes it follow
+ * the capsule exactly.
  *
  * Set in caps, tracked, in the heaviest cut the page has (the name face's
  * Medium), because a cut-out letter is read by the picture inside it and a
