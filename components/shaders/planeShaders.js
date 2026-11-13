@@ -63,6 +63,12 @@ export const fragmentShader = /* glsl */ `
   // around it: the field goes soft, and a wake runs out through the surface.
   // Packed into vec4s for the same reason the link parameters are.
   uniform vec4 uMouse;  // cursor.xy px, presence 0..1, blend px added at it
+  uniform vec4 uBead;
+  uniform vec4 uBeadR;
+  uniform vec4 uBeadT;
+  uniform vec4 uBeadL;
+  uniform vec4 uBeadLP;
+  uniform sampler2D uBeadTex;
   uniform vec4 uMelt;   // reach px, wake px, wake frequency, wake speed
 
   vec2 atlasUV(vec2 uv, float idx) {
@@ -176,6 +182,20 @@ export const fragmentShader = /* glsl */ `
 
     // Ends are square and buried inside the planes, so they never show.
     return max(abs(along) - len * 0.5, abs(across) - r);
+  }
+
+  float sdDrop(vec2 p, vec2 a, vec2 b, float ra, float rb) {
+    vec2 ba = b - a;
+    float h = dot(ba, ba);
+    float dr = ra - rb;
+    if (h <= dr * dr + 0.01) return length(p - a) - ra;
+    p -= a;
+    vec2 q = vec2(abs(dot(p, vec2(ba.y, -ba.x))), dot(p, ba)) / h;
+    vec2 c = vec2(sqrt(h - dr * dr), dr);
+    float k = c.x * q.y - c.y * q.x;
+    if (k < 0.0) return sqrt(h * dot(q, q)) - ra;
+    if (k > c.x) return sqrt(h * (dot(q, q) + 1.0 - 2.0 * q.y)) - rb;
+    return dot(c, q) - ra;
   }
 
   // smooth minimum — this is what makes the shapes read as liquid.
@@ -295,6 +315,20 @@ export const fragmentShader = /* glsl */ `
          * uMelt.y * exp(-toMouse / max(uMelt.x, 1.0));
     }
 
+    float db = 1e6;
+    float dd = 1e6;
+    if (uBeadR.x > 0.05) {
+      float rh = uBeadR.x;
+      float pill = sdRoundBox(p - uBead.xy, vec2(max(uBeadL.y, rh), rh), rh);
+      dd = smin(pill, sdDrop(p, uBead.xy, uBead.zw, rh, uBeadR.y), 3.0);
+      db = dd;
+      if (uBeadT.z > -3.0) {
+        float dh = sdBridge(p, uBeadT.xy, uBead.xy, uBeadT.z, uBeadT.w, uBeadL.z);
+        db = smin(db, dh, uBeadL.w);
+      }
+      d = smin(d, db, uBeadR.z);
+    }
+
     // Clamped, not just floored: the distance cull above leaves a step in the
     // field, and an unclamped fwidth across that step paints a half-opaque
     // outline along every cull boundary.
@@ -349,6 +383,15 @@ export const fragmentShader = /* glsl */ `
     // returns the authored sRGB values, and this shader adds no output
     // encoding of its own — decoding on read without encoding on write is
     // what darkens everything.
+    // Ink follows the same distance field; the word reveals the original art.
+    float beadAA = clamp(fwidth(db), 0.5, 2.0);
+    float ink = (1.0 - smoothstep(-beadAA, beadAA, db));
+    float glyph = 0.0;
+    vec2 bq = p - uBead.xy;
+    if (uBeadL.x > 0.001 && abs(bq.x) < uBeadLP.x && abs(bq.y) < uBeadLP.y) {
+      glyph = texture2D(uBeadTex, bq / (2.0 * uBeadLP.xy) + 0.5).g * uBeadL.x;
+    }
+    col = mix(col, vec3(0.04), ink * (1.0 - glyph));
     gl_FragColor = vec4(col, alpha);
   }
 `;

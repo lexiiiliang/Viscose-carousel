@@ -10,6 +10,8 @@ import {
   MAX_PLANES,
   MAX_LINKS,
 } from "./shaders/planeShaders";
+import { createBeadWord } from "./ring/bead";
+import { createHover } from "./ring/hover";
 import { buildAtlas } from "./ring/atlas";
 import { createMeta } from "./ring/meta";
 import { createSplitText } from "./ring/splitText";
@@ -142,7 +144,17 @@ export default function Carousel() {
       uSheen: { value: 0 },
       uMouse: { value: new THREE.Vector4() },
       uMelt: { value: new THREE.Vector4() },
+      uBead: { value: new THREE.Vector4(-1e4, -1e4, -1e4, -1e4) },
+      uBeadR: { value: new THREE.Vector4() },
+      uBeadT: { value: new THREE.Vector4(0, 0, -100, -100) },
+      uBeadL: { value: new THREE.Vector4() },
+      uBeadLP: { value: new THREE.Vector4(1, 1, 1, 0) },
+      uBeadTex: { value: null },
     };
+
+    const wordSheet = createBeadWord(params, uniforms);
+    wordSheet.build();
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
@@ -687,6 +699,7 @@ export default function Carousel() {
       );
 
     // Which card is at the front, and which is under the cursor.
+    const hover = createHover(params, uniforms, wordSheet, pointer);
     let shown = -1;
     let announced = -1;
     let over = -1;
@@ -952,6 +965,18 @@ export default function Carousel() {
       }
 
       over = overI;
+      const customCursor = hover.update({
+        dt,
+        coarse,
+        active: lightbox.active,
+        interactive,
+        dragging,
+        over,
+        count,
+        W,
+        H,
+        reduced: reducedMotion.matches,
+      });
       // Off the resting centre, so a card being pushed cannot chase its own
       // shadow next frame.
       if (over >= 0) focusPos.copy(rest[over]);
@@ -960,9 +985,11 @@ export default function Carousel() {
       // zoom-out in the lightbox.
       container.style.cursor = lightbox.active
         ? "zoom-out"
-        : over >= 0
-          ? "pointer"
-          : "default";
+        : customCursor
+          ? "none"
+          : over >= 0
+            ? "pointer"
+            : "default";
 
       // The column and the meta name whatever cell the front plane is wearing,
       // read off the same deal the shader was handed rather than recomputed —
@@ -1218,6 +1245,7 @@ export default function Carousel() {
     // the page going blank and starting over.
     const startEntry = () => {
       if (disposed || tl) return;
+      wordSheet.build();
       splitText.build();
       styleMeta();
       replay();
@@ -1400,6 +1428,7 @@ export default function Carousel() {
       tl?.kill();
       gsap.killTweensOf(splitText.chars);
       gsap.killTweensOf(splitText.fades);
+      wordSheet.dispose();
       meta.dispose();
       splitText.dispose();
       gui?.destroy();

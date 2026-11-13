@@ -103,6 +103,19 @@ export function defaultParams() {
     snapFrom: 1, // rad/s under which the ring commits to a slot
     pickTime: 0.55, // click-to-centre: seconds for one slot, root-scaled
     pickEase: "power3.inOut",
+    beadSize: 14, // px across at rest
+    beadPillH: 15, // px, half the pill's height over a card
+    beadPillPad: 15, // px of honey either side of the word
+    beadTail: 0.38, // the tail's radius, as a fraction of the head's
+    beadLag: 0.3, // how fast the tail catches up, per 60fps frame
+    beadStretch: 2.6, // longest the drop gets, in head radii
+    beadMelt: 20, // px of blend between it and a card
+    beadReach: 64, // px from a card's edge at which the drop starts reaching for it
+    beadSnap: 240, // px a thread stretches before it lets go
+    beadHold: 1.3, // s a thread lasts if it is not pulled
+    tagText: "View",
+    wordSize: 13, // px
+
     lightboxTime: 0.55,
     lightboxFill: 0.92, // fraction of the viewport available to the large card
     lightboxEase: "power3.inOut",

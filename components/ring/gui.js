@@ -119,6 +119,20 @@ export function mountGui(GUI, { params, state, info, actions }) {
   onStage("moveDelay", 0, 15, 0.05, "moveDelay");
   stage.add(params, "moveEase", EASES).onChange(replay);
 
+  const bead = gui.addFolder("cursor drop");
+  bead.add(params, "beadSize", 4, 30, 1);
+  bead.add(params, "beadPillH", 8, 30, 1);
+  bead.add(params, "beadPillPad", 4, 30, 1);
+  bead.add(params, "beadTail", 0.1, 1, 0.01);
+  bead.add(params, "beadLag", 0.05, 1, 0.01);
+  bead.add(params, "beadStretch", 1, 5, 0.1);
+  bead.add(params, "beadMelt", 0, 40, 1);
+  bead.add(params, "beadReach", 0, 120, 1);
+  bead.add(params, "beadSnap", 40, 400, 5);
+  bead.add(params, "beadHold", 0.1, 3, 0.1);
+  bead.add(params, "tagText");
+  bead.add(params, "wordSize", 9, 20, 1);
+
   // -- lightbox ------------------------------------------------------------
   const lightbox = gui.addFolder("lightbox");
   lightbox.add(params, "lightboxTime", 0.05, 3, 0.05).name("time (s)");
